@@ -1,0 +1,28 @@
+# Service repos — each is its own independent git repo
+lighthouse-api/
+lighthouse-web/
+lighthouse-worker/
+
+# Planning docs (kept locally, not committed)
+docs/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Docker volumes mounted into the dev stack
+data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+logs/
