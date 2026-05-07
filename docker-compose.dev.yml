@@ -1,5 +1,5 @@
-# Lighthouse dev infrastructure (Phase 0)
-# Postgres + Redis only. Traefik / MinIO arrive in later phases.
+# Lighthouse dev infrastructure
+# Postgres + Redis + Traefik. MinIO arrives in later phases.
 #
 # Bring up:    make up
 # Tear down:   make down
@@ -42,6 +42,34 @@ services:
       timeout: 3s
       retries: 10
       start_period: 3s
+
+  # Traefik routes <deployment-id>.localhost to deployed containers via Docker labels.
+  # Worker attaches new containers to the lighthouse-public network at run time;
+  # Traefik watches that network and picks up routing labels automatically.
+  traefik:
+    image: traefik:v3.6
+    container_name: lighthouse-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=lighthouse-public"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8090}:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - lighthouse-public
+
+networks:
+  # Worker creates this on first deploy via the Docker SDK. Marking external
+  # so compose just attaches Traefik instead of trying to (re)create it.
+  lighthouse-public:
+    name: lighthouse-public
+    external: true
 
 volumes:
   postgres_data:
