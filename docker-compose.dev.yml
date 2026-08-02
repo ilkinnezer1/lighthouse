@@ -1,5 +1,5 @@
 # Lighthouse dev infrastructure
-# Postgres + Redis + Traefik. MinIO arrives in later phases.
+# Postgres + Redis + MinIO + Traefik.
 #
 # Bring up:    make up
 # Tear down:   make down
@@ -43,12 +43,59 @@ services:
       retries: 10
       start_period: 3s
 
-  # Traefik routes <deployment-id>.localhost to deployed containers via Docker labels.
-  # Worker attaches new containers to the lighthouse-public network at run time;
-  # Traefik watches that network and picks up routing labels automatically.
+  # Object storage for database snapshots (Phase 7). S3 API on :9000, web
+  # console on :9001. The worker creates the `snapshots` bucket on first use;
+  # dev access/secret keys are just the MinIO root user/password.
+  minio:
+    image: minio/minio:latest
+    container_name: lighthouse-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:-lighthouse}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-lighthouse_dev_pw}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # BuildKit daemon for the `railpack` build strategy — the only builder that
+  # doesn't drive the Docker daemon directly. Privileged because BuildKit runs
+  # each build step in its own container. The published port is bound to
+  # loopback: buildkitd over TCP is unauthenticated, so exposing it on all
+  # interfaces would hand out root-equivalent build access.
+  buildkitd:
+    image: moby/buildkit:latest
+    container_name: lighthouse-buildkit
+    restart: unless-stopped
+    privileged: true
+    command: ["--addr", "tcp://0.0.0.0:1234"]
+    ports:
+      - "127.0.0.1:${BUILDKIT_PORT:-1234}:1234"
+    volumes:
+      - buildkit_data:/var/lib/buildkit
+    healthcheck:
+      test: ["CMD", "buildctl", "--addr", "tcp://127.0.0.1:1234", "debug", "workers"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Worker attaches deployed containers to lighthouse-public; Traefik watches
+  # that network and picks up routing labels automatically. Local and server
+  # are two services (not one parameterized) because port :80/:443 collision
+  # makes them mutually exclusive — compose profiles enforce that at runtime.
   traefik:
     image: traefik:v3.6
     container_name: lighthouse-traefik
+    profiles: ["local"]
     restart: unless-stopped
     command:
       - "--api.insecure=true"
@@ -64,6 +111,32 @@ services:
     networks:
       - lighthouse-public
 
+  # Cert resolver name `le` must match `certResolver` in worker stages/run.go.
+  traefik-server:
+    image: traefik:v3.6
+    container_name: lighthouse-traefik
+    profiles: ["server"]
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=lighthouse-public"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:?ACME_EMAIL required for server mode}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "letsencrypt:/letsencrypt"
+    networks:
+      - lighthouse-public
+
 networks:
   # Worker creates this on first deploy via the Docker SDK. Marking external
   # so compose just attaches Traefik instead of trying to (re)create it.
@@ -74,3 +147,6 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
+  buildkit_data:
+  letsencrypt:

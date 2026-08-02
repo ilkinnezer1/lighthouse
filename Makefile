@@ -1,4 +1,5 @@
-COMPOSE := docker compose -f docker-compose.dev.yml
+MODE ?= local
+COMPOSE := docker compose -f docker-compose.dev.yml --profile $(MODE)
 
 .PHONY: env up down restart logs ps psql redis-cli reset clean
 
