@@ -4,7 +4,8 @@ lighthouse-web/
 lighthouse-worker/
 
 # Planning docs (kept locally, not committed)
-docs/
+docs/*
+!docs/guides/
 
 # Local environment
 .env

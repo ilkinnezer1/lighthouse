@@ -69,6 +69,10 @@ scheduled tasks · deploy notifications (Slack, Discord, webhook) · organizatio
 access and invitations · an audit log · live build and runtime log streaming · and an in-browser
 terminal into any running container.
 
+## Guides
+
+- [`docs/guides/existing-app.md`](./docs/guides/existing-app.md): bringing an existing app (dev-style repo, real database, old migrations) to Lighthouse, step by step
+
 ## Design docs
 
 Written before the build and still the reference for intent, in reading order:
